@@ -1,48 +1,75 @@
 #define _CRT_SECURE_NO_WARNINGS
 #include <stdio.h>
 #include <stdlib.h>
-#include <windows.h>
-#include <conio.h>
+#include <string.h>
 
-char* getkey();
+struct Object {
+	char* name;
+	int x;
+	int y;
+	int zIndex;
+	char type;
+	char* innerText;
+};
 
-int main() {
-    char* inputText;
+char* itos(int input) {
+	int n = input;
+	char* output;
+	int length = 0;
+	int w = 1;
 
-    printf("텍스트를 입력하세요 (종료하려면 Ctrl+s를 누르세요):\n");
-    inputText = getkey();
-    printf("입력된 값 : %s", inputText);
-    FILE* file = fopen("test.txt", "w");
-    if (file != NULL) {
-        fputs(inputText, file);
-        printf("텍스트가 바탕화면의 'test.txt' 파일로 저장되었습니다.\n");
-    }
-    else {
-        printf("파일 저장 실패!\n");
-    }
-    free(inputText);
-    return 0;
+	for (; n != 0; n /= 10, ++length, w *= 10);
+	w /= 10;
+	output = (char*)malloc(sizeof(char) * length);
+	for (int i = length - 1; i >= 0; i--) {
+		if (i == 0) {
+			output[length - i - 1] = '0' + (input % (w * 10));
+			output[length] = '\0';
+			break;
+		}
+		else {
+			output[length - i - 1] = '0' + (input / w);
+			input = input % w;
+			w /= 10;
+		}
+	}
+
+	printf("length = %d", length);
+	printf("output = %s", output);
+	return 0;
 }
 
+/*
+int save(struct Object object, FILE* file) {
+	char essentialData[1] = 0;
+	strcat(essentialData, " name=");
+	strcat(essentialData, object.name);
+	strcat(essentialData, " x=");
+	strcat(essentialData, object.x);
+	strcat(essentialData, " y=");
+	strcat(essentialData, object.y);
+	strcat(essentialData, " z=");
+	strcat(essentialData, object.zIndex);
 
+	switch (object.type) {
+	case 'T':		//Text
+		fprintf(file, "<text>");
+		break;
+	case 'I':		//Image
+		fprintf(file, "<img>");
+		break;
+	default:
+		return -1;
+		break;
+	}
+}
+*/
+int main() {
+	FILE* f = fopen("20231117.txt", "w+");
+	struct Object obj = { "object 1", 0, 0, 1, 'T' };
+	//save(obj, f);
+	itos(507);
+	fclose(f);
 
-char* getkey() {
-    char ret[] = "";
-    char *buffer;
-    int size = 0;
-    while (1) {
-        char c = _getch();
-        if (c != EOF) {
-            if (c == 19) {
-                printf("함수 안 : %s\n", buffer);
-                return buffer;
-            }
-            else {
-                printf("%c", c);
-                ret = (char)malloc(sizeof(char));
-                *ret = c;
-            }
-            size++;
-        }
-    }
+	return 0;
 }
