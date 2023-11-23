@@ -2,25 +2,20 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include <SDL.h>
-#include <SDL_ttf.h>
+#include <conio.h>
+#include "SDL.h"
+#include "SDL_ttf.h"
 #include "han2unicode.h"
 #pragma comment(lib, "SDL2main.lib")
 #pragma comment(lib, "SDL2.lib")
 #pragma comment(lib, "SDL2_ttf.lib")
 
 struct Object {
-	char* name;
-	int x;
-	int y;
-	int width;
-	int height;
-	int zIndex;
-	char type;
+	int id;
 	char* innerText;
-	struct Color* color;
 	struct Color* textColor;
-};
+} *object;
+
 
 struct Button {
 	int id;
@@ -39,7 +34,7 @@ struct Button {
 	char* FONT;
 	int FS;
 	int unicode;
-};
+} *button;
 
 struct Color {
 	int R;
@@ -47,28 +42,38 @@ struct Color {
 	int B;
 	int A;
 };
-
 SDL_Window* window;
 SDL_Renderer* renderer;
 TTF_Font* font;
-
-struct Button* button = NULL;
-int buttoncount = 0;
-int last_hovered_button = -1;
+SDL_Event event;
 
 void Rect(int, int, int, int, char*, int, char*);
-void Button(int update, int boxx, int boxy, int boxw, int boxh, int textx, int texty, char* boxc, char* hoverc, char* borderc, int bordert, char* textc, char* text, char* font, int fonts, int unicode);
+void Button(int, int, int, int, int, int, int, char*, char*, char*, int, char*, char*, char*, int, int);
 void setUI(TTF_Font*);
+void buttonAction(int);
+void refresh();
+int Text(const char*, int, int, char*, int, char*, int);
+void save();
+void load();
 int ctoi(char);
 int setup(int, int, char[]);
-int Text(const char*, int, int, char*, int, char*, int);
-char* getkey();
-struct Color toRGB(char*);char* itos(int);
-
+struct Color toRGB(char*); char* itos(int);
 
 const char* KOREAN_TEXT = "안녕하세요, SDL!";
 int windowWidth = 960;
 int windowHeight = 480;
+int buttoncount = 0;
+int objectcount = 0;
+int last_hovered_button = -1;
+int size = 5;
+char color[] = "#0011ff00";
+char* inputString;
+int inputStringLen = 0;
+int inputStringIndex = 0;
+int selectStart = 0, selectEnd = 0;
+
+
+FILE* textfile;
 
 
 int main(int argc, char* argv[]) {
@@ -84,21 +89,17 @@ int main(int argc, char* argv[]) {
 	}
 	setUI(font);
 	FILE* file = fopen("20231117.txt", "w+");
+
 	if (file == NULL) {
 		printf("Failed to open save file!\n");
 		return 0;
 	}
 
 
-	struct Object objects;
 	printf("Start\n");
-	SDL_Event event;
 	int done = 0;
 	double mouseX = -999;
 	double mouseY = -999;
-
-	Text(KOREAN_TEXT, 20, 100, "fonts/NanumGothic.ttf", 15, "#00445500", 1);
-
 	while (1) {
 		SDL_PollEvent(&event);
 		if (event.type == SDL_QUIT) {
@@ -107,6 +108,12 @@ int main(int argc, char* argv[]) {
 		else if (event.type == SDL_MOUSEBUTTONDOWN) {
 			mouseX = event.button.x;
 			mouseY = event.button.y;
+			for (int i = 0; i < buttoncount; i++) {
+				if (mouseX >= button[i].x && mouseX <= button[i].x + button[i].w && mouseY >= button[i].y && mouseY <= button[i].y + button[i].h) {
+					printf("%d클릭됨\n", button[i].id);
+					buttonAction(button[i].id);
+				}
+			}
 		}
 		else if (event.type == SDL_MOUSEMOTION) {
 			mouseX = event.motion.x;
@@ -136,6 +143,182 @@ int main(int argc, char* argv[]) {
 					button[last_hovered_button - 1].FONT, button[last_hovered_button - 1].FS,
 					button[last_hovered_button - 1].unicode);
 				last_hovered_button = -1;
+			}
+		}
+
+		if (event.type == SDL_KEYDOWN) {
+			//Rect((inputStringIndex * 14 - 14) % 960, (inputStringIndex * 14 / 960) * 18 + 56, 12, 3, "w", 0, "00000000");
+			//Rect((inputStringIndex * 14 + 14) % 960, ((inputStringIndex * 14 + 14) / 960) * 18 + 56, 12, 3, "w", 0, "00000000");
+			char key = event.key.keysym.sym;
+			if (SDL_GetModState() & KMOD_CTRL && key == SDLK_s) {
+				save();
+				SDL_Delay(100);
+			}
+			else if (SDL_GetModState() & KMOD_CTRL && key == SDLK_o) {
+				load();
+				SDL_Delay(100);
+			}
+			else if (event.key.keysym.sym == SDLK_LEFT) {
+				if (inputStringIndex > 0) {
+					for (int i = inputStringIndex + 1; i <= inputStringLen + 1; i++) {
+						Rect((i * 14) % 960, (i * 14 / 960) * 18 + 56, 12, 3, "w", 0, "00000000");
+					}
+					inputStringIndex--;
+				}
+				SDL_Delay(100);
+			}
+			else if (event.key.keysym.sym == SDLK_RIGHT) {
+				if (inputStringIndex < inputStringLen) {
+					for (int i = 0; i <= inputStringIndex + 1; i++) {
+						Rect((i * 14) % 960, (i * 14 / 960) * 18 + 56, 12, 3, "w", 0, "00000000");
+					}
+					inputStringIndex++;
+				}
+				SDL_Delay(100);
+			}
+			else if (key == SDLK_BACKSPACE) {
+				if (inputStringLen > 0) {
+					inputStringLen--;
+					inputString = (char*)realloc(inputString, sizeof(char) * (inputStringLen + 1));
+					for (int i = inputStringIndex; i < inputStringLen; i++) {
+						inputString[i] = inputString[i + 1];
+					}
+					Rect(0, 35, 960, (inputStringIndex * 14 / 960 + 1) * 26, "w", 0, "00000000");
+					inputString[inputStringLen] = '\0';
+					printf("\n%s", inputString);
+					for (int i = 0; i < inputStringLen; i++) {
+						char text[2] = { inputString[i], '\0' };
+						Text(text, (i * 14 - 14) % 960, (i * 14 / 960) * 18 + 35, "fonts/NanumGothic.ttf", 18, "#00000000", 0);
+					}
+					Rect((inputStringIndex * 14 - 42) % 960, ((inputStringIndex * 14 - 14) / 960) * 18 + 56, 12, 3, "#000000", 0, "00000000");
+					inputStringIndex--;
+					printf("index=%d len=%d\n", inputStringIndex, inputStringLen);
+				}
+			}
+			else if (SDL_GetModState() & KMOD_SHIFT && (key >= 32 && key <= 126)) {
+				char temp = key;
+				inputStringLen++;
+				if (key >= 'a' && key <= 'z') {
+					temp = key - 'a' + 'A';
+				}
+				else if (key >= SDLK_0 && key <= SDLK_9) {
+					switch (key)
+					{
+					case '1':
+						temp = '!';
+						break;
+					case '2':
+						temp = '@';
+						break;
+					case '3':
+						temp = '#';
+						break;
+					case '4':
+						temp = '$';
+						break;
+					case '5':
+						temp = '%';
+						break;
+					case '6':
+						temp = '^';
+						break;
+					case '7':
+						temp = '&';
+						break;
+					case '8':
+						temp = '*';
+						break;
+					case '9':
+						temp = '(';
+						break;
+					case '0':
+						temp = ')';
+						break;
+
+					default:
+						break;
+					}
+				}
+				else {
+					switch (key)
+					{
+					case '`':
+						temp = '~';
+						break;
+					case '-':
+						temp = '_';
+						break;
+					case '=':
+						temp = '+';
+						break;
+					case '[':
+						temp = '{';
+						break;
+					case ']':
+						temp = '}';
+						break;
+					case '\\':
+						temp = '|';
+						break;
+					case ';':
+						temp = ':';
+						break;
+					case '\'':
+						temp = '"';
+						break;
+					case ',':
+						temp = '<';
+						break;
+					case '.':
+						temp = '>';
+						break;
+					case '/':
+						temp = '?';
+						break;
+					default:
+						break;
+					}
+				}
+				inputString = (char*)realloc(inputString, sizeof(char) * (inputStringLen + 1));
+				for (int i = inputStringLen - 1; i > inputStringIndex; i--) {
+					inputString[i] = inputString[i - 1];
+				}
+				for (int i = inputStringIndex + 1; i <= inputStringLen + 1; i++) {
+					Rect((i * 14) % 960, (i * 14 / 960) * 18 + 56, 12, 3, "w", 0, "00000000");char text[2] = { inputString[i], '\0' };
+					Text(text, (i * 14 - 14) % 960, (i * 14 / 960) * 18 + 35, "fonts/NanumGothic.ttf", 18, "#00000000", 0);
+				}
+				inputString[inputStringIndex] = temp;
+				inputString[inputStringLen] = '\0';
+				inputStringIndex++;
+				printf("%s\n", inputString);
+				printf("index=%d len=%d\n", inputStringIndex, inputStringLen);
+				for (int i = inputStringIndex + 1; i < inputStringLen; i++) {
+					Rect((i * 14) % 960, (i * 14 / 960) * 18 + 56, 12, 3, "w", 0, "00000000");
+					char text[2] = { inputString[i], '\0' };
+					Text(text, (i * 14 - 14) % 960, (i * 14 / 960) * 18 + 35, "fonts/NanumGothic.ttf", 18, "#00000000", 0);
+				}
+				Rect((inputStringIndex * 14 - 14) % 960, ((inputStringIndex * 14 - 14) / 960) * 18 + 56, 12, 3, "#000000", 0, "00000000");
+				Rect((inputStringIndex * 14 - 28) % 960, ((inputStringIndex * 14 - 14) / 960) * 18 + 56, 12, 3, "w", 0, "00000000");
+			}
+			else if (key >= 32 && key <= 126) {
+				char temp = key;
+				inputStringLen++;
+				inputString = (char*)realloc(inputString, sizeof(char) * (inputStringLen + 1));
+				for (int i = inputStringLen - 1; i > inputStringIndex; i--) {
+					inputString[i] = inputString[i - 1];
+				}
+				inputString[inputStringIndex] = temp;
+				inputString[inputStringLen] = '\0';
+				inputStringIndex++;
+				printf("%s\n", inputString);
+				printf("index=%d len=%d\n", inputStringIndex, inputStringLen);
+				for (int i = inputStringIndex + 1; i < inputStringLen; i++) {
+					Rect((i * 14) % 960, (i * 14 / 960) * 18 + 56, 12, 3, "w", 0, "00000000");
+					char text[2] = { inputString[i], '\0' };
+					Text(text, (i * 14 - 14) % 960, (i * 14 / 960) * 18 + 35, "fonts/NanumGothic.ttf", 18, "#00000000", 0);
+				}				
+				Rect((inputStringIndex * 14 - 14) % 960, ((inputStringIndex * 14 - 14) / 960) * 18 + 56, 12, 3, "#000000", 0, "00000000");
+				Rect((inputStringIndex * 14 - 28) % 960, ((inputStringIndex * 14 - 14) / 960) * 18 + 56, 12, 3, "w", 0, "00000000");
 			}
 		}
 	}
@@ -195,9 +378,10 @@ int setup(int window_width, int window_height, char name[]) {
 }
 //UI 생성
 void setUI(TTF_Font* font) {
-	Rect(0, 0, 960, 30, "#cccccc00", 2, "0xffffff00");
-	Button(0, 0, 2, 60, 26, 18, 5, "#cccccc00", "#ffffff00", "#00000000", 1, "#00000000", "파일", "fonts/NanumGothic.ttf", 15, 1);
-	Button(0, 60, 2, 60, 26, 77, 5, "#cccccc00", "#ffffff00", "#00000000", 1, "#00000000", "편집", "fonts/NanumGothic.ttf", 15, 1);
+	Rect(0, 0, 960, 30, "#ccccccff", 2, "0xffffffff", 1, 0);
+	Button(0, 0, 2, 60, 26, 18, 5, "#ccccccff", "#ffffffff", "#00000000", 1, "#00000000", "파일", "fonts/NanumGothic.ttf", 15, 1);
+	Button(0, 60, 2, 80, 26, 62, 5, "#cccccc00", "#ffffff00", "#00000000", 1, "#00000000", "텍스트 추가", "fonts/NanumGothic.ttf", 15, 1);
+	Button(0, 140, 2, 60, 26, 149, 5, "#cccccc00", "#ffffff00", "#00000000", 1, "#00000000", "그리기", "fonts/NanumGothic.ttf", 15, 1);
 	Button(0, windowWidth - 60, 2, 60, 26, windowWidth - 60 + 1, 5, "#cccccc00", "#ffffff00", "#00000000", 1, "#00000000", "다시실행", "fonts/NanumGothic.ttf", 15, 1);
 	Button(0, windowWidth - 120, 2, 60, 26, windowWidth - 120 + 1, 5, "#cccccc00", "#ffffff00", "#00000000", 1, "#00000000", "실행취소", "fonts/NanumGothic.ttf", 15, 1);
 }
@@ -235,6 +419,12 @@ void Button(int update, int boxx, int boxy, int boxw, int boxh, int textx, int t
 //사각형 생성
 void Rect(int x, int y, int width, int height, char* fillColor, int borderThickness, char* borderColor) {
 	struct Color Fillc = toRGB(fillColor);
+	if (fillColor[0] == 'w' || fillColor[0] == 'W') {
+		Fillc.R = 255;
+		Fillc.G = 255;
+		Fillc.B = 255;
+		Fillc.A = 0;
+	}
 	struct Color Borderc = toRGB(borderColor);
 	SDL_Rect shape = { x + borderThickness, y + borderThickness, width - borderThickness * 2, height - borderThickness * 2 };
 	SDL_Rect outline = { x , y , width, height };
@@ -362,55 +552,124 @@ int ctoi(char c) {
 	}
 }
 
+void buttonAction(int id) {
+	char str[1000];
+	int pointCount = 0;
+	int mouseX = -999, mouseY = -999;
+	switch (id) {
+	case 1:
+		break;
+	case 2:
+		printf("텍스트를 입력해 주세요 >> ");
+		scanf("%[^\n]s", str);
+		getchar();
+		object = (struct object*)realloc(object, sizeof(object) * objectcount + 1);
+		object[objectcount].id = objectcount;
+		objectcount++;
 
-
-char* getkey() {
-	char* String = NULL;
-	int len = 0;
-	char filePath[256]; // 파일 경로를 담을 변수
-
-	while (1) {
-		char c = getchar();
-
-		if (c != EOF) {
-			if (c == 19) { // Ctrl+s
-				if (String != NULL) {
-					String[len] = '\0'; // Null-terminate the string only if it's not NULL
+		printf("텍스트를 넣을 위치를 선택하세요 >> \n\n");
+		while (1) {
+			SDL_PollEvent(&event);
+			if (event.type == SDL_MOUSEBUTTONDOWN) {
+				mouseX = event.button.x;
+				mouseY = event.button.y;
+				if (mouseY <= 30) {
+					mouseY = 30;
 				}
+				Text(str, mouseX, mouseY, "fonts/NanumGothic.ttf", 15, "#00000000", 1, objectcount);
 				break;
 			}
-			else if (c == 17) { // Ctrl+q
-				printf("\n파일 경로와 이름을 입력하세요 (예: C:/path/to/file.txt): ");
-				scanf("%s", filePath);
-				getchar(); // 개행 문자 처리
+			else if (event.type == SDL_MOUSEMOTION) {
+				mouseX = event.motion.x;
+				mouseY = event.motion.y;
 
-				FILE* readFile = fopen(filePath, "r");
-				if (readFile != NULL) {
-					fseek(readFile, 0, SEEK_END);
-					long fileSize = ftell(readFile);
-					fseek(readFile, 0, SEEK_SET);
-
-					String = (char*)realloc(String, sizeof(char) * (len + fileSize + 1));
-					size_t newLen = fread(String + len, sizeof(char), fileSize, readFile);
-					String[len + newLen] = '\0'; // Null-terminate the string
-
-					fclose(readFile);
-
-					len += newLen;
-					printf("파일 내용 확인:\n%s", String);
-				}
-				else {
-					printf("파일 열기 실패!\n");
-				}
-			}
-			else {
-				String = (char*)realloc(String, sizeof(char) * (len + 2));
-				String[len] = c;
-				len++;
-				String[len] = '\0'; // Null-terminate the string
+				refresh();
+				SDL_Delay(100);
 			}
 		}
-	}
+		break;
+	case 3:
+		object = (struct object*)realloc(object, sizeof(object) * objectcount + 1);
+		object[objectcount].id = objectcount;
+		objectcount++;
+		SDL_PollEvent(&event);
+		while (1) {
+			if (event.type == SDL_MOUSEMOTION) {
+				//object[objectcount].point->x = (struct Point*)realloc(object[objectcount].point->x, sizeof(int) * pointCount + 1);
+				//object[objectcount].point->y = (struct Point*)realloc(object[objectcount].point->y, sizeof(int) * pointCount + 1);
+				if (mouseY <= 30) {
+					mouseY = 30;
+				}
+				Rect(mouseX, mouseY, 5, 5, "#00000000", 0, "#00000000");
 
-	return String;
+				//object[objectcount].point->x[pointCount] = mouseX;
+				//object[objectcount].point->y[pointCount] = mouseY;
+				//printf("그리는 중... x=%d, y=%d\n", object[objectcount].point->x[pointCount],
+				//	object[objectcount].point->y[pointCount]);
+				mouseX = event.motion.x;
+				mouseY = event.motion.y;
+				SDL_Delay(100);
+				pointCount++;
+			}
+			if (event.type == SDL_MOUSEBUTTONUP) {
+				break;
+			}
+		}
+		printf("빠져나옴");
+		break;
+	}
+}
+
+void refresh() {
+	/*for (int i = 0; i < objectcount - 1; i++) {
+		if ((object[i].x <= disposableObject[disposableObjectcount].x && object[i].x + object[i].width >= disposableObject[disposableObjectcount].x) ||
+			(object[i].x + object[i].width <= disposableObject[disposableObjectcount].x &&
+				object[i].x + object[i].width >= disposableObject[disposableObjectcount].x + disposableObject[disposableObjectcount].w)) {
+			printf("겹침  ");
+		}
+	}*/
+}
+
+void save() {
+	char filePath[256];
+	printf("\n파일 경로와 이름을 입력하세요 (예: C:/path/to/file.txt): ");
+	scanf("%s", filePath);
+	filePath[strlen(filePath) + 1] = '\0';
+	getchar(); // 개행 문자 처리
+
+	FILE* File = fopen(filePath, "w+");
+	fprintf(File, "%s", inputString);
+	fclose(File);
+}
+
+void load() {
+	char filePath[256];
+	char buffer[1000];
+	printf("\n파일 경로와 이름을 입력하세요 (예: C:/path/to/file.txt): ");
+	scanf("%s", filePath);
+	filePath[strlen(filePath) + 1] = '\0';
+	getchar(); // 개행 문자 처리
+
+	FILE* File = fopen(filePath, "r");
+	if (File == NULL) {
+		printf("파일 열기 실패\n");
+	}
+	fgets(buffer, sizeof(buffer), File);
+	
+	inputString = (char*)realloc(inputString, sizeof(char) * (strlen(buffer) + 2));
+	inputStringLen = strlen(buffer) + 1;
+	inputStringIndex = inputStringLen;
+	for (int i = 0; i <= inputStringLen; i++) {
+		printf("불러오는 중...");
+		inputString[i] = buffer[i];
+		char text[2] = { inputString[i], '\0' };
+		if (i != inputStringLen - 1) {
+			Text(text, (i * 14 - 14) % 960, (i * 14 / 960) * 18 + 35, "fonts/NanumGothic.ttf", 18, "#00000000", 0);
+		}
+	}
+	printf("불러오기 완료...");
+
+	fclose(File);
+
+		printf("불러오기 완료...");
 }
